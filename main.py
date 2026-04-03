@@ -1,6 +1,7 @@
 import os
 import json
 import httpx
+import uvicorn
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -18,6 +19,7 @@ app.add_middleware(
 )
 
 # Environment Variables (Set these in Render/Local .env)
+# Default keys provided for fallback, but should be set in Render Dashboard
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyCWVOcYgdVATQ85oXn0zc_oX0BGkDfD4Ps")
 X_API_KEY = os.getenv("X_API_KEY", "sk_track2_987654321")
 
@@ -97,23 +99,30 @@ async def extract_data_with_ai(base64_data: str, file_type: str, file_name: str)
     }
 
     async with httpx.AsyncClient() as client:
-        response = await client.post(url, json=payload, timeout=60.0)
-        if response.status_code != 200:
-            raise Exception(f"AI Service Error: {response.text}")
-        
-        result = response.json()
-        raw_json = result['candidates'][0]['content']['parts'][0]['text']
-        return json.loads(raw_json)
+        try:
+            response = await client.post(url, json=payload, timeout=60.0)
+            if response.status_code != 200:
+                raise Exception(f"AI Service Error ({response.status_code}): {response.text}")
+            
+            result = response.json()
+            raw_json = result['candidates'][0]['content']['parts'][0]['text']
+            return json.loads(raw_json)
+        except httpx.ConnectError:
+            raise Exception("Could not connect to AI Service. Check internet connection or API Key.")
 
 # --- Routes ---
+@app.get("/")
+async def root():
+    return {"message": "AI Document Analysis API is running", "status": "online"}
+
 @app.post("/api/document-analyze", response_model=AnalysisResponse)
 async def analyze_document(
     request: DocumentRequest, 
-    x_api_key: Optional[str] = Header(None)
+    x_api_key: Optional[str] = Header(None, alias="x-api-key")
 ):
-    # Requirement 6: API Authentication
+    # Requirement 6: API Authentication (Check against header 'x-api-key')
     if x_api_key != X_API_KEY:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+        raise HTTPException(status_code=401, detail="Unauthorized: Invalid API Key")
 
     try:
         analysis = await extract_data_with_ai(
@@ -137,5 +146,6 @@ async def analyze_document(
         }
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Render assigns a port via the PORT environment variable
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
