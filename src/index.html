@@ -2,100 +2,77 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Document Analyzer</title>
+    <title>DocuIntel AI | Analytics</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        .loader { border-top-color: #6366f1; animation: spin 1s linear infinite; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-    </style>
 </head>
-<body class="bg-slate-50 min-h-screen p-4 md:p-10 font-sans">
+<body class="bg-slate-50 min-h-screen p-10 font-sans">
     <div class="max-w-4xl mx-auto space-y-8">
         <header class="text-center">
-            <h1 class="text-5xl font-black text-indigo-600 tracking-tighter">DocuIntel AI</h1>
-            <p class="text-slate-500 font-bold uppercase text-[10px] tracking-widest mt-2">Analysis & Extraction Dashboard</p>
+            <h1 class="text-5xl font-black text-indigo-600">DocuIntel AI</h1>
+            <p class="text-slate-400 font-bold uppercase text-[10px] tracking-widest mt-2">Analysis & Extraction v2.1</p>
         </header>
 
-        <!-- Configuration -->
-        <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div class="space-y-1">
-                <label class="text-[10px] font-black text-slate-400 uppercase ml-2">Endpoint URL</label>
-                <input id="apiUrl" type="text" placeholder="https://your-app.onrender.com" class="w-full border p-3 rounded-xl text-sm">
-            </div>
-            <div class="space-y-1">
-                <label class="text-[10px] font-black text-slate-400 uppercase ml-2">x-api-key</label>
-                <input id="apiKey" type="password" value="sk_track2_987654321" class="w-full border p-3 rounded-xl text-sm">
-            </div>
+        <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 flex gap-4">
+            <input id="apiUrl" type="text" placeholder="Backend URL" class="flex-1 border p-3 rounded-xl text-sm">
+            <input id="apiKey" type="password" value="sk_track2_987654321" class="flex-1 border p-3 rounded-xl text-sm">
         </div>
 
-        <!-- Upload -->
         <div class="bg-white p-12 rounded-[3rem] shadow-xl border-2 border-dashed border-slate-200 text-center space-y-6">
-            <input type="file" id="fileInput" class="hidden" onchange="document.getElementById('fn').innerText = this.files[0].name; document.getElementById('ub').classList.remove('hidden')">
-            <label for="fileInput" class="cursor-pointer inline-block bg-indigo-600 text-white px-10 py-5 rounded-2xl font-black shadow-lg shadow-indigo-100 hover:scale-105 transition-transform">Choose File</label>
-            <p id="fn" class="text-slate-400 font-bold italic">No file selected</p>
-            <button id="ub" onclick="analyze()" class="hidden w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-lg">Analyze Document</button>
-            <div id="ld" class="hidden flex justify-center"><div class="loader rounded-full border-4 border-t-4 border-gray-200 h-12 w-12"></div></div>
+            <input type="file" id="fileInput" class="hidden" onchange="document.getElementById('fn').innerText = this.files[0].name">
+            <label for="fileInput" class="cursor-pointer inline-block bg-indigo-600 text-white px-12 py-5 rounded-2xl font-black shadow-lg">Select File</label>
+            <p id="fn" class="text-slate-400 font-bold">No file selected</p>
+            <button onclick="analyze()" class="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-xl">Analyze Document</button>
         </div>
 
-        <!-- Results -->
-        <div id="rs" class="hidden space-y-6 animate-in fade-in zoom-in duration-500">
-            <div class="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm">
-                <div class="flex justify-between items-center mb-6">
-                    <h3 class="font-black text-2xl text-slate-800">AI Summary</h3>
-                    <span id="st" class="px-4 py-1 bg-indigo-100 text-indigo-600 rounded-full text-xs font-black uppercase"></span>
-                </div>
-                <p id="sm" class="text-slate-600 text-xl leading-relaxed italic"></p>
+        <div id="rs" class="hidden space-y-8">
+            <div class="bg-white p-10 rounded-[3.5rem] border border-slate-200 shadow-sm">
+                <h3 class="font-black text-2xl mb-4">Summary</h3>
+                <p id="sm" class="text-slate-600 text-xl italic"></p>
+                <span id="st" class="mt-4 inline-block px-3 py-1 bg-indigo-100 text-indigo-600 rounded-full text-xs font-black uppercase"></span>
             </div>
-            <div id="en" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"></div>
+            <div id="en" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"></div>
         </div>
     </div>
 
     <script>
+        document.getElementById('apiUrl').value = window.location.origin;
+
         async function analyze() {
             const file = document.getElementById('fileInput').files[0];
-            const baseUrl = document.getElementById('apiUrl').value || window.location.origin;
+            const baseUrl = document.getElementById('apiUrl').value;
             const key = document.getElementById('apiKey').value;
-
-            document.getElementById('ld').classList.remove('hidden');
-            document.getElementById('ub').classList.add('hidden');
 
             const reader = new FileReader();
             reader.readAsDataURL(file);
             reader.onload = async () => {
                 const base64 = reader.result.split(',')[1];
-                try {
-                    const response = await fetch(`${baseUrl}/api/document-analyze`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'x-api-key': key },
-                        body: JSON.stringify({
-                            fileName: file.name,
-                            fileType: file.name.split('.').pop().toLowerCase(),
-                            fileBase64: base64
-                        })
-                    });
-                    const data = await response.json();
-                    if(data.status === 'success') render(data);
-                    else alert("Error: " + data.summary);
-                } catch (e) { alert("Failed to connect to API."); }
-                finally { document.getElementById('ld').classList.add('hidden'); document.getElementById('ub').classList.remove('hidden'); }
+                const response = await fetch(`${baseUrl}/api/document-analyze`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-api-key': key },
+                    body: JSON.stringify({
+                        fileName: file.name,
+                        fileType: file.name.split('.').pop().toLowerCase(),
+                        fileBase64: base64
+                    })
+                });
+                const data = await response.json();
+                render(data);
             };
         }
 
         function render(data) {
             document.getElementById('rs').classList.remove('hidden');
-            document.getElementById('sm').innerText = `"${data.summary}"`;
+            document.getElementById('sm').innerText = data.summary;
             document.getElementById('st').innerText = data.sentiment;
             const box = document.getElementById('en');
             box.innerHTML = '';
             for (const [k, v] of Object.entries(data.entities)) {
-                box.innerHTML += `
-                    <div class="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
-                        <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">${k}</p>
-                        <div class="flex flex-wrap gap-2">
-                            ${v.length ? v.map(i => `<span class="bg-slate-50 border px-2 py-1 rounded-lg text-xs font-bold">${i}</span>`).join('') : '<span class="text-slate-200 italic">None</span>'}
-                        </div>
-                    </div>`;
+                box.innerHTML += `<div class="bg-white p-6 rounded-3xl border shadow-sm">
+                    <p class="text-[10px] font-black text-slate-400 uppercase mb-3">${k}</p>
+                    <div class="flex flex-wrap gap-2">
+                        ${v.length ? v.map(i => `<span class="bg-slate-50 border px-2 py-1 rounded-lg text-xs font-bold">${i}</span>`).join('') : 'None'}
+                    </div>
+                </div>`;
             }
         }
     </script>
