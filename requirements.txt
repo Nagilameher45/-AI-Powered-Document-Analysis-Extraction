@@ -3,3 +3,7 @@ uvicorn
 httpx
 pydantic
 python-dotenv
+pymupdf
+pillow
+pytesseract
+python-docx
