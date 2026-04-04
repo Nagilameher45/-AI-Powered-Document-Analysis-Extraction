@@ -1,21 +1,23 @@
 import os
 import json
+import base64
 import httpx
 import uvicorn
-import sys
+import fitz  # PyMuPDF
+import io
+from PIL import Image
+import pytesseract
+from docx import Document
+
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import List, Optional
 
-# --- Initialization ---
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(BASE_DIR)
+app = FastAPI(title="FREE AI Document Analyzer")
 
-app = FastAPI(title="AI Document Analysis API")
-
-# --- CORS Setup ---
+# --- CORS ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,11 +26,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Environment Variables (IMPORTANT) ---
+# --- API Keys ---
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-X_API_KEY = os.getenv("X_API_KEY", "sk_track2_987654321")
+X_API_KEY = "sk_track2_987654321"
 
-# --- Data Schemas ---
+# --- Models ---
 class DocumentRequest(BaseModel):
     fileName: str
     fileType: str
@@ -47,135 +49,105 @@ class AnalysisResponse(BaseModel):
     entities: Entities
     sentiment: str
 
-# --- AI Logic ---
-async def extract_data(base64_data: str, file_type: str, file_name: str):
-    
-    if not GEMINI_API_KEY:
-        raise Exception("Missing GEMINI_API_KEY")
+# --- TEXT EXTRACTION ---
+def extract_text(base64_data, file_type):
+    file_bytes = base64.b64decode(base64_data)
 
-    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+    if file_type == "pdf":
+        text = ""
+        pdf = fitz.open(stream=file_bytes, filetype="pdf")
+        for page in pdf:
+            text += page.get_text()
+        return text
 
-    system_prompt = """
-    Extract:
-    1. One-line summary
-    2. Entities:
-       - names
-       - dates
-       - organizations
-       - amounts
-    3. Sentiment (Positive/Neutral/Negative)
+    elif file_type in ["jpg", "jpeg", "png"]:
+        image = Image.open(io.BytesIO(file_bytes))
+        return pytesseract.image_to_string(image)
 
-    Return ONLY JSON in this format:
-    {
+    elif file_type == "docx":
+        doc = Document(io.BytesIO(file_bytes))
+        return "\n".join([p.text for p in doc.paragraphs])
+
+    return ""
+
+# --- AI FUNCTION ---
+async def analyze_text(text):
+    text = text[:3000]
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_API_KEY}"
+
+    prompt = f"""
+    Analyze the document and return ONLY JSON:
+
+    Text:
+    {text}
+
+    Format:
+    {{
       "summary": "",
-      "entities": {
+      "entities": {{
         "names": [],
         "dates": [],
         "organizations": [],
         "amounts": []
-      },
+      }},
       "sentiment": ""
-    }
+    }}
     """
 
-    mime_map = {
-        "pdf": "application/pdf",
-        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "jpg": "image/jpeg",
-        "jpeg": "image/jpeg",
-        "png": "image/png"
-    }
-
-    mime_type = mime_map.get(file_type.lower(), "application/octet-stream")
-
-    # ✅ FIXED PAYLOAD
     payload = {
         "contents": [
-            {
-                "role": "user",
-                "parts": [
-                    {"text": f"{system_prompt}\nFile Name: {file_name}"},
-                    {
-                        "inline_data": {
-                            "mime_type": mime_type,
-                            "data": base64_data
-                        }
-                    }
-                ]
-            }
+            {"parts": [{"text": prompt}]}
         ]
     }
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        response = await client.post(url, json=payload)
+    async with httpx.AsyncClient() as client:
+        res = await client.post(url, json=payload)
 
-        print("STATUS:", response.status_code)
-        print("RESPONSE:", response.text)
+        if res.status_code != 200:
+            raise Exception(res.text)
 
-        if response.status_code != 200:
-            raise Exception(f"AI Service Error: {response.status_code} - {response.text}")
-
-        result = response.json()
+        data = res.json()
+        raw = data['candidates'][0]['content']['parts'][0]['text']
 
         try:
-            raw_text = result['candidates'][0]['content']['parts'][0]['text']
-            return json.loads(raw_text)
-        except Exception:
-            raise Exception("Invalid AI response format")
+            return json.loads(raw)
+        except:
+            return {
+                "summary": raw[:200],
+                "entities": {"names": [], "dates": [], "organizations": [], "amounts": []},
+                "sentiment": "Neutral"
+            }
 
-# --- Routes ---
+# --- ROUTES ---
 @app.get("/", response_class=HTMLResponse)
-async def serve_home():
-    try:
-        path = os.path.join(BASE_DIR, "index.html")
-        with open(path, "r", encoding="utf-8") as f:
-            return f.read()
-    except Exception:
-        return "<h1>API is Online</h1><p>Ready to process documents.</p>"
+def home():
+    with open("index.html", "r", encoding="utf-8") as f:
+        return f.read()
 
 @app.post("/api/document-analyze", response_model=AnalysisResponse)
-async def analyze_document(
-    request: DocumentRequest,
-    x_api_key: Optional[str] = Header(None, alias="x-api-key")
-):
+async def analyze(req: DocumentRequest, x_api_key: Optional[str] = Header(None)):
+    
     if x_api_key != X_API_KEY:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    try:
-        analysis = await extract_data(
-            request.fileBase64,
-            request.fileType,
-            request.fileName
-        )
+    text = extract_text(req.fileBase64, req.fileType.lower())
 
-        return {
-            "status": "success",
-            "fileName": request.fileName,
-            "summary": analysis.get("summary", ""),
-            "entities": analysis.get("entities", {
-                "names": [],
-                "dates": [],
-                "organizations": [],
-                "amounts": []
-            }),
-            "sentiment": analysis.get("sentiment", "Neutral")
-        }
+    if not text:
+        raise HTTPException(status_code=400, detail="Text extraction failed")
 
-    except Exception as e:
-        return {
-            "status": "error",
-            "fileName": request.fileName,
-            "summary": str(e),
-            "entities": {
-                "names": [],
-                "dates": [],
-                "organizations": [],
-                "amounts": []
-            },
-            "sentiment": "Neutral"
-        }
+    result = await analyze_text(text)
 
-# --- Run Server ---
+    return {
+        "status": "success",
+        "fileName": req.fileName,
+        "summary": result.get("summary", ""),
+        "entities": result.get("entities", {
+            "names": [], "dates": [], "organizations": [], "amounts": []
+        }),
+        "sentiment": result.get("sentiment", "Neutral")
+    }
+
+# --- RUN ---
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
