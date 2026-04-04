@@ -15,7 +15,7 @@ sys.path.append(BASE_DIR)
 
 app = FastAPI(title="AI Document Analysis API")
 
-# --- CORS Setup (Requirement for Web Browsers) ---
+# --- CORS Setup (Fixes the 'undefined' error) ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,11 +24,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configuration from Render Environment Variables
+# Configuration from Render Environment Variables [cite: 72]
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyCWVOcYgdVATQ85oXn0zc_oX0BGkDfD4Ps")
 X_API_KEY = os.getenv("X_API_KEY", "sk_track2_987654321")
 
-# --- Data Schemas (Requirement 39 & 41) ---
+# --- Data Schemas [cite: 39, 41] ---
 class DocumentRequest(BaseModel):
     fileName: str
     fileType: str
@@ -47,18 +47,12 @@ class AnalysisResponse(BaseModel):
     entities: Entities
     sentiment: str
 
-# --- AI Logic (Requirement 4, 8, 9, & 12) ---
+# --- AI Logic (Requirement 4, 8, 9) ---
 async def extract_data(base64_data: str, file_type: str, file_name: str):
-    # API Endpoint for Gemini 1.5 Flash
+    # API Endpoint for Gemini 1.5 Flash [cite: 12]
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
     
-    system_prompt = """
-    Analyze the document. Extract:
-    1. SUMMARY: A concise 1-sentence summary. [cite: 95]
-    2. ENTITIES: Names, dates, organizations, and monetary amounts. [cite: 9, 98]
-    3. SENTIMENT: Positive, Neutral, or Negative. [cite: 100]
-    Return ONLY a JSON object. [cite: 23]
-    """
+    system_prompt = "Extract a 1-sentence summary, key entities (names, dates, organizations, amounts), and sentiment (Positive/Neutral/Negative). Return ONLY JSON."
     
     mime_map = {
         "pdf": "application/pdf",
@@ -88,10 +82,8 @@ async def extract_data(base64_data: str, file_type: str, file_name: str):
         return json.loads(raw_text)
 
 # --- Routes ---
-
 @app.get("/", response_class=HTMLResponse)
 async def serve_home():
-    """Serves the dashboard UI (Requirement 15)."""
     try:
         path = os.path.join(BASE_DIR, "index.html")
         with open(path, "r", encoding="utf-8") as f:
@@ -104,7 +96,7 @@ async def analyze_document(
     request: DocumentRequest, 
     x_api_key: Optional[str] = Header(None, alias="x-api-key")
 ):
-    # Requirement 25: API Authentication
+    # Requirement 25: API Authentication 
     if x_api_key != X_API_KEY:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
