@@ -15,7 +15,7 @@ sys.path.append(BASE_DIR)
 
 app = FastAPI(title="AI Document Analysis API")
 
-# --- CORS Setup (Fixes the 'undefined' error) ---
+# --- CORS Setup ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,11 +24,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configuration from Render Environment Variables [cite: 72]
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyCWVOcYgdVATQ85oXn0zc_oX0BGkDfD4Ps")
+# --- Environment Variables (IMPORTANT) ---
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 X_API_KEY = os.getenv("X_API_KEY", "sk_track2_987654321")
 
-# --- Data Schemas [cite: 39, 41] ---
+# --- Data Schemas ---
 class DocumentRequest(BaseModel):
     fileName: str
     fileType: str
@@ -47,39 +47,81 @@ class AnalysisResponse(BaseModel):
     entities: Entities
     sentiment: str
 
-# --- AI Logic (Requirement 4, 8, 9) ---
+# --- AI Logic ---
 async def extract_data(base64_data: str, file_type: str, file_name: str):
-    # API Endpoint for Gemini 1.5 Flash [cite: 12]
+    
+    if not GEMINI_API_KEY:
+        raise Exception("Missing GEMINI_API_KEY")
+
     url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent?key={GEMINI_API_KEY}"
-    
-    system_prompt = "Extract a 1-sentence summary, key entities (names, dates, organizations, amounts), and sentiment (Positive/Neutral/Negative). Return ONLY JSON."
-    
+
+    system_prompt = """
+    Extract:
+    1. One-line summary
+    2. Entities:
+       - names
+       - dates
+       - organizations
+       - amounts
+    3. Sentiment (Positive/Neutral/Negative)
+
+    Return ONLY JSON in this format:
+    {
+      "summary": "",
+      "entities": {
+        "names": [],
+        "dates": [],
+        "organizations": [],
+        "amounts": []
+      },
+      "sentiment": ""
+    }
+    """
+
     mime_map = {
         "pdf": "application/pdf",
         "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png"
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "png": "image/png"
     }
+
     mime_type = mime_map.get(file_type.lower(), "application/octet-stream")
 
+    # ✅ FIXED PAYLOAD
     payload = {
-        "contents": [{
-            "parts": [
-                {"text": f"File Name: {file_name}"},
-                {"inlineData": {"mimeType": mime_type, "data": base64_data}}
-            ]
-        }],
-        "systemInstruction": {"parts": [{"text": system_prompt}]},
-        "generationConfig": { "responseMimeType": "application/json" }
+        "contents": [
+            {
+                "role": "user",
+                "parts": [
+                    {"text": f"{system_prompt}\nFile Name: {file_name}"},
+                    {
+                        "inline_data": {
+                            "mime_type": mime_type,
+                            "data": base64_data
+                        }
+                    }
+                ]
+            }
+        ]
     }
 
-    async with httpx.AsyncClient() as client:
-        response = await client.post(url, json=payload, timeout=60.0)
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        response = await client.post(url, json=payload)
+
+        print("STATUS:", response.status_code)
+        print("RESPONSE:", response.text)
+
         if response.status_code != 200:
-            raise Exception(f"AI Service Error: {response.status_code}")
-        
+            raise Exception(f"AI Service Error: {response.status_code} - {response.text}")
+
         result = response.json()
-        raw_text = result['candidates'][0]['content']['parts'][0]['text']
-        return json.loads(raw_text)
+
+        try:
+            raw_text = result['candidates'][0]['content']['parts'][0]['text']
+            return json.loads(raw_text)
+        except Exception:
+            raise Exception("Invalid AI response format")
 
 # --- Routes ---
 @app.get("/", response_class=HTMLResponse)
@@ -93,31 +135,47 @@ async def serve_home():
 
 @app.post("/api/document-analyze", response_model=AnalysisResponse)
 async def analyze_document(
-    request: DocumentRequest, 
+    request: DocumentRequest,
     x_api_key: Optional[str] = Header(None, alias="x-api-key")
 ):
-    # Requirement 25: API Authentication 
     if x_api_key != X_API_KEY:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     try:
-        analysis = await extract_data(request.fileBase64, request.fileType, request.fileName)
+        analysis = await extract_data(
+            request.fileBase64,
+            request.fileType,
+            request.fileName
+        )
+
         return {
             "status": "success",
             "fileName": request.fileName,
             "summary": analysis.get("summary", ""),
-            "entities": analysis.get("entities", {"names": [], "dates": [], "organizations": [], "amounts": []}),
+            "entities": analysis.get("entities", {
+                "names": [],
+                "dates": [],
+                "organizations": [],
+                "amounts": []
+            }),
             "sentiment": analysis.get("sentiment", "Neutral")
         }
+
     except Exception as e:
         return {
             "status": "error",
             "fileName": request.fileName,
             "summary": str(e),
-            "entities": {"names": [], "dates": [], "organizations": [], "amounts": []},
+            "entities": {
+                "names": [],
+                "dates": [],
+                "organizations": [],
+                "amounts": []
+            },
             "sentiment": "Neutral"
         }
 
+# --- Run Server ---
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
