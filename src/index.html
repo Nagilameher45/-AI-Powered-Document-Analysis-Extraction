@@ -2,172 +2,42 @@
 <html>
 <head>
     <title>AI Document Analyzer</title>
-    <style>
-        body {
-            font-family: Arial;
-            background: #f4f6f9;
-            text-align: center;
-        }
-
-        h1 {
-            margin-top: 30px;
-        }
-
-        .upload-box {
-            border: 2px dashed #aaa;
-            padding: 40px;
-            margin: 30px auto;
-            width: 400px;
-            background: white;
-            cursor: pointer;
-            transition: 0.3s;
-        }
-
-        .upload-box:hover {
-            border-color: #007bff;
-        }
-
-        .upload-box.dragover {
-            border-color: green;
-            background: #eaffea;
-        }
-
-        button {
-            padding: 12px 25px;
-            margin-top: 10px;
-            background: #007bff;
-            color: white;
-            border: none;
-            cursor: pointer;
-            font-size: 16px;
-        }
-
-        button:hover {
-            background: #0056b3;
-        }
-
-        .loading {
-            margin-top: 20px;
-            display: none;
-        }
-
-        .result {
-            margin-top: 30px;
-            width: 60%;
-            margin-left: auto;
-            margin-right: auto;
-            background: white;
-            padding: 20px;
-            text-align: left;
-            border-radius: 10px;
-            box-shadow: 0px 0px 10px rgba(0,0,0,0.1);
-        }
-
-        pre {
-            background: #f1f1f1;
-            padding: 10px;
-            overflow-x: auto;
-        }
-    </style>
 </head>
 <body>
 
 <h1>📄 AI Document Analyzer</h1>
 
-<div class="upload-box" id="dropArea">
-    <p>📂 Drag & Drop File Here</p>
-    <p>or Click to Upload</p>
-    <input type="file" id="fileInput" hidden />
-</div>
+<input type="file" id="fileInput">
+<button onclick="upload()">Analyze</button>
 
-<button onclick="uploadFile()">Analyze Document</button>
-
-<div class="loading" id="loading">
-    ⏳ Processing... Please wait
-</div>
-
-<div class="result" id="result"></div>
+<pre id="result"></pre>
 
 <script>
-let selectedFile = null;
+async function upload() {
+    const file = document.getElementById("fileInput").files[0];
 
-const dropArea = document.getElementById("dropArea");
-const fileInput = document.getElementById("fileInput");
-const loading = document.getElementById("loading");
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
 
-dropArea.onclick = () => fileInput.click();
+    reader.onload = async () => {
+        const base64 = reader.result.split(',')[1];
 
-fileInput.onchange = () => {
-    selectedFile = fileInput.files[0];
-    dropArea.innerHTML = `<p>Selected: ${selectedFile.name}</p>`;
-};
-
-dropArea.ondragover = (e) => {
-    e.preventDefault();
-    dropArea.classList.add("dragover");
-};
-
-dropArea.ondragleave = () => {
-    dropArea.classList.remove("dragover");
-};
-
-dropArea.ondrop = (e) => {
-    e.preventDefault();
-    dropArea.classList.remove("dragover");
-    selectedFile = e.dataTransfer.files[0];
-    dropArea.innerHTML = `<p>Dropped: ${selectedFile.name}</p>`;
-};
-
-function toBase64(file) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = () => resolve(reader.result.split(',')[1]);
-        reader.onerror = error => reject(error);
-    });
-}
-
-async function uploadFile() {
-    if (!selectedFile) {
-        alert("Please select a file!");
-        return;
-    }
-
-    loading.style.display = "block";
-
-    const base64 = await toBase64(selectedFile);
-
-    try {
-        const response = await fetch("/api/document-analyze", {
+        const res = await fetch("/api/document-analyze", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
                 "x-api-key": "sk_track2_987654321"
             },
             body: JSON.stringify({
-                fileName: selectedFile.name,
-                fileType: selectedFile.name.split('.').pop(),
+                fileName: file.name,
+                fileType: file.name.split('.').pop(),
                 fileBase64: base64
             })
         });
 
-        const data = await response.json();
-
-        document.getElementById("result").innerHTML = `
-            <h3>📌 Summary</h3>
-            <p>${data.summary}</p>
-
-            <h3>😊 Sentiment</h3>
-            <p>${data.sentiment}</p>
-
-            <h3>📊 Entities</h3>
-            <pre>${JSON.stringify(data.entities, null, 2)}</pre>
-        `;
-    } catch (error) {
-        document.getElementById("result").innerHTML = `<p style="color:red;">Error: ${error}</p>`;
-    }
-
-    loading.style.display = "none";
+        const data = await res.json();
+        document.getElementById("result").innerText = JSON.stringify(data, null, 2);
+    };
 }
 </script>
 
