@@ -50,7 +50,7 @@ class AnalysisResponse(BaseModel):
 # --- AI Logic (Requirement 4, 8, 9) ---
 async def extract_data(base64_data: str, file_type: str, file_name: str):
     # API Endpoint for Gemini 1.5 Flash [cite: 12]
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent?key={GEMINI_API_KEY}"
     
     system_prompt = "Extract a 1-sentence summary, key entities (names, dates, organizations, amounts), and sentiment (Positive/Neutral/Negative). Return ONLY JSON."
     
