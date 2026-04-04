@@ -5,14 +5,14 @@
     <title>DocuIntel AI | Analytics</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-slate-50 min-h-screen p-10 font-sans">
+<body class="bg-slate-50 min-h-screen p-10">
     <div class="max-w-4xl mx-auto space-y-8">
         <header class="text-center">
             <h1 class="text-5xl font-black text-indigo-600">DocuIntel AI</h1>
-            <p class="text-slate-400 font-bold uppercase text-[10px] tracking-widest mt-2">Analysis & Extraction v2.1</p>
+            <p class="text-slate-400 font-bold uppercase text-[10px] mt-2">Analysis & Extraction v2.1</p>
         </header>
 
-        <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 flex gap-4">
+        <div class="bg-white p-6 rounded-3xl border border-slate-200 flex gap-4">
             <input id="apiUrl" type="text" placeholder="Backend URL" class="flex-1 border p-3 rounded-xl text-sm">
             <input id="apiKey" type="password" value="sk_track2_987654321" class="flex-1 border p-3 rounded-xl text-sm">
         </div>
@@ -35,6 +35,7 @@
     </div>
 
     <script>
+        // Use the current domain as the default URL
         document.getElementById('apiUrl').value = window.location.origin;
 
         async function analyze() {
@@ -42,21 +43,31 @@
             const baseUrl = document.getElementById('apiUrl').value;
             const key = document.getElementById('apiKey').value;
 
+            if (!file) return alert("Please select a file.");
+
             const reader = new FileReader();
-            reader.readAsDataURL(file);
+            reader.readAsDataURL(file); // Encode to Base64 [cite: 21]
             reader.onload = async () => {
                 const base64 = reader.result.split(',')[1];
-                const response = await fetch(`${baseUrl}/api/document-analyze`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'x-api-key': key },
-                    body: JSON.stringify({
-                        fileName: file.name,
-                        fileType: file.name.split('.').pop().toLowerCase(),
-                        fileBase64: base64
-                    })
-                });
-                const data = await response.json();
-                render(data);
+                try {
+                    const response = await fetch(`${baseUrl}/api/document-analyze`, {
+                        method: 'POST',
+                        headers: { 
+                            'Content-Type': 'application/json', 
+                            'x-api-key': key // Requirement 26 [cite: 26, 33]
+                        },
+                        body: JSON.stringify({
+                            fileName: file.name,
+                            fileType: file.name.split('.').pop().toLowerCase(),
+                            fileBase64: base64
+                        })
+                    });
+                    const data = await response.json();
+                    if (data.status === "success") render(data);
+                    else alert("Error: " + data.summary);
+                } catch (e) {
+                    alert("Network Error: Could not connect to API. Check your URL.");
+                }
             };
         }
 
