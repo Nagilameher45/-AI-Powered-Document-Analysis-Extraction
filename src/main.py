@@ -5,18 +5,23 @@ import uvicorn
 import sys
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import List, Optional
 
-# --- Fix for ModuleNotFoundError ---
-# This ensures that even if the app is run from inside 'src', 
-# or from the root, the imports work correctly.
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# --- Initialization & Path Setup ---
+# Ensures the app can find the index.html file in the same directory [cite: 59]
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(BASE_DIR)
 
-# --- Configuration ---
-app = FastAPI(title="AI Document Analysis API")
+app = FastAPI(
+    title="AI-Powered Document Analysis",
+    description="Track 2: AI-Powered Document Analysis & Extraction API",
+    version="1.0.0"
+)
 
-# Enable CORS for the React Frontend
+# --- Middleware ---
+# Essential for allowing the web-based frontend to communicate with this API
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,45 +29,48 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Environment Variables
+# --- Configuration (Requirement 6 & 12) [cite: 25, 72] ---
+# These are retrieved from Render's Environment Variables
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyCWVOcYgdVATQ85oXn0zc_oX0BGkDfD4Ps")
 X_API_KEY = os.getenv("X_API_KEY", "sk_track2_987654321")
 
-# --- Models ---
-class DocumentRequest(BaseModel):
-    fileName: str
-    fileType: str
-    fileBase64: str
+# --- Data Models (Requirement 8 & 9) [cite: 39, 41] ---
+class DocumentRequest(Base64_Encoded_Body):
+    fileName: str # [cite: 40]
+    fileType: str # [cite: 40]
+    fileBase64: str # [cite: 40]
 
 class Entities(BaseModel):
-    names: List[str]
-    dates: List[str]
-    organizations: List[str]
-    amounts: List[str]
+    names: List[str] # [cite: 48]
+    dates: List[str] # [cite: 49]
+    organizations: List[str] # [cite: 50]
+    amounts: List[str] # [cite: 51]
 
 class AnalysisResponse(BaseModel):
-    status: str
-    fileName: str
-    summary: str
-    entities: Entities
-    sentiment: str
+    status: str # [cite: 44]
+    fileName: str # [cite: 45]
+    summary: str # [cite: 46]
+    entities: Entities # [cite: 47]
+    sentiment: str # [cite: 53]
 
-# --- Extraction Strategy (LLM Integration) ---
-async def extract_data_with_ai(base64_data: str, file_type: str, file_name: str):
+# --- AI Core Logic (Requirement 2 & 12) [cite: 5, 75] ---
+async def extract_and_analyze(base64_data: str, file_type: str, file_name: str):
     """
-    Uses Gemini-2.5-Flash to handle OCR and Analysis in one pass.
+    Uses Gemini-2.5-Flash to perform OCR and extraction in one step.
+    This fulfills the requirement for multi-format support and automatic analysis[cite: 3, 6].
     """
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key={GEMINI_API_KEY}"
     
     system_prompt = """
-    You are an AI Document Processor. Analyze the input file.
-    1. If it's an image, perform OCR first.
-    2. Provide a concise summary (1-2 sentences).
-    3. Extract named entities (names, dates, organizations, monetary amounts).
-    4. Determine sentiment (Positive, Negative, or Neutral).
-    Return ONLY valid JSON.
+    You are a professional Document Analysis System[cite: 3].
+    Analyze the provided content and extract:
+    1. SUMMARY: A concise 1-sentence summary[cite: 8, 95].
+    2. ENTITIES: Names, dates, organizations, and monetary amounts[cite: 9, 98].
+    3. SENTIMENT: 'Positive', 'Neutral', or 'Negative'[cite: 100].
+    Return the response strictly as a JSON object[cite: 23].
     """
     
+    # Mime Type mapping for Multi-format support (Requirement 2) [cite: 6, 20]
     mime_map = {
         "pdf": "application/pdf",
         "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -75,79 +83,73 @@ async def extract_data_with_ai(base64_data: str, file_type: str, file_name: str)
     payload = {
         "contents": [{
             "parts": [
-                {"text": f"Process this {file_type} file named {file_name}."},
+                {"text": f"Analyze this {file_type} document named '{file_name}'."},
                 {"inlineData": {"mimeType": mime_type, "data": base64_data}}
             ]
         }],
         "systemInstruction": {"parts": [{"text": system_prompt}]},
         "generationConfig": {
-            "responseMimeType": "application/json",
-            "responseSchema": {
-                "type": "OBJECT",
-                "properties": {
-                    "summary": {"type": "string"},
-                    "entities": {
-                        "type": "OBJECT",
-                        "properties": {
-                            "names": {"type": "ARRAY", "items": {"type": "string"}},
-                            "dates": {"type": "ARRAY", "items": {"type": "string"}},
-                            "organizations": {"type": "ARRAY", "items": {"type": "string"}},
-                            "amounts": {"type": "ARRAY", "items": {"type": "string"}}
-                        }
-                    },
-                    "sentiment": {"type": "string", "enum": ["Positive", "Neutral", "Negative"]}
-                }
-            }
+            "responseMimeType": "application/json"
         }
     }
 
     async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post(url, json=payload, timeout=60.0)
-            if response.status_code != 200:
-                raise Exception(f"AI Service Error ({response.status_code})")
-            
-            result = response.json()
-            raw_json = result['candidates'][0]['content']['parts'][0]['text']
-            return json.loads(raw_json)
-        except Exception as e:
-            raise Exception(f"AI Connection Error: {str(e)}")
+        response = await client.post(url, json=payload, timeout=60.0)
+        if response.status_code != 200:
+            raise Exception(f"AI Service Error: {response.status_code}")
+        
+        result = response.json()
+        raw_output = result['candidates'][0]['content']['parts'][0]['text']
+        return json.loads(raw_output)
 
 # --- Routes ---
-@app.get("/")
-async def root():
-    return {"message": "API is online", "docs": "/docs"}
+
+@app.get("/", response_class=HTMLResponse)
+async def serve_dashboard():
+    """
+    Serves the dashboard UI (index.html) at the root URL[cite: 15].
+    """
+    try:
+        html_path = os.path.join(BASE_DIR, "index.html")
+        with open(html_path, "r", encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        return "<h1>API Live</h1><p>Upload index.html to the src/ folder to see the dashboard.</p>"
 
 @app.post("/api/document-analyze", response_model=AnalysisResponse)
-async def analyze_document(
+async def analyze_document_endpoint(
     request: DocumentRequest, 
     x_api_key: Optional[str] = Header(None, alias="x-api-key")
 ):
+    """
+    Main extraction endpoint (Requirement 5)[cite: 18, 30]. 
+    Validates x-api-key (Requirement 6) and returns structured data[cite: 25, 41].
+    """
     if x_api_key != X_API_KEY:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+        raise HTTPException(status_code=401, detail="Unauthorized: Invalid API Key [cite: 25]")
 
     try:
-        analysis = await extract_data_with_ai(
+        analysis_data = await extract_and_analyze(
             request.fileBase64, 
             request.fileType, 
             request.fileName
         )
+        
         return {
             "status": "success",
             "fileName": request.fileName,
-            **analysis
+            **analysis_data
         }
     except Exception as e:
         return {
             "status": "error",
             "fileName": request.fileName,
-            "summary": str(e),
+            "summary": f"Failed to process: {str(e)}",
             "entities": {"names": [], "dates": [], "organizations": [], "amounts": []},
             "sentiment": "Neutral"
         }
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
-    # Using 'main:app' instead of just 'app' helps uvicorn locate the module correctly
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
-
+    # Render assigns the port via the PORT environment variable [cite: 73]
+    server_port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=server_port)
