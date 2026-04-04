@@ -2,10 +2,16 @@ import os
 import json
 import httpx
 import uvicorn
+import sys
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
+
+# --- Fix for ModuleNotFoundError ---
+# This ensures that even if the app is run from inside 'src', 
+# or from the root, the imports work correctly.
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # --- Configuration ---
 app = FastAPI(title="AI Document Analysis API")
@@ -18,8 +24,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Environment Variables (Set these in Render/Local .env)
-# Default keys provided for fallback, but should be set in Render Dashboard
+# Environment Variables
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyCWVOcYgdVATQ85oXn0zc_oX0BGkDfD4Ps")
 X_API_KEY = os.getenv("X_API_KEY", "sk_track2_987654321")
 
@@ -45,8 +50,7 @@ class AnalysisResponse(BaseModel):
 # --- Extraction Strategy (LLM Integration) ---
 async def extract_data_with_ai(base64_data: str, file_type: str, file_name: str):
     """
-    Uses Gemini-2.5-Flash to handle OCR (for images) and 
-    Analysis (for summary/entities/sentiment) in one pass.
+    Uses Gemini-2.5-Flash to handle OCR and Analysis in one pass.
     """
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key={GEMINI_API_KEY}"
     
@@ -59,7 +63,6 @@ async def extract_data_with_ai(base64_data: str, file_type: str, file_name: str)
     Return ONLY valid JSON.
     """
     
-    # Map file types to mime types for Gemini
     mime_map = {
         "pdf": "application/pdf",
         "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -102,27 +105,26 @@ async def extract_data_with_ai(base64_data: str, file_type: str, file_name: str)
         try:
             response = await client.post(url, json=payload, timeout=60.0)
             if response.status_code != 200:
-                raise Exception(f"AI Service Error ({response.status_code}): {response.text}")
+                raise Exception(f"AI Service Error ({response.status_code})")
             
             result = response.json()
             raw_json = result['candidates'][0]['content']['parts'][0]['text']
             return json.loads(raw_json)
-        except httpx.ConnectError:
-            raise Exception("Could not connect to AI Service. Check internet connection or API Key.")
+        except Exception as e:
+            raise Exception(f"AI Connection Error: {str(e)}")
 
 # --- Routes ---
 @app.get("/")
 async def root():
-    return {"message": "AI Document Analysis API is running", "status": "online"}
+    return {"message": "API is online", "docs": "/docs"}
 
 @app.post("/api/document-analyze", response_model=AnalysisResponse)
 async def analyze_document(
     request: DocumentRequest, 
     x_api_key: Optional[str] = Header(None, alias="x-api-key")
 ):
-    # Requirement 6: API Authentication (Check against header 'x-api-key')
     if x_api_key != X_API_KEY:
-        raise HTTPException(status_code=401, detail="Unauthorized: Invalid API Key")
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
     try:
         analysis = await extract_data_with_ai(
@@ -130,7 +132,6 @@ async def analyze_document(
             request.fileType, 
             request.fileName
         )
-        
         return {
             "status": "success",
             "fileName": request.fileName,
@@ -140,12 +141,12 @@ async def analyze_document(
         return {
             "status": "error",
             "fileName": request.fileName,
-            "summary": f"Processing failed: {str(e)}",
+            "summary": str(e),
             "entities": {"names": [], "dates": [], "organizations": [], "amounts": []},
             "sentiment": "Neutral"
         }
 
 if __name__ == "__main__":
-    # Render assigns a port via the PORT environment variable
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    # Using 'main:app' instead of just 'app' helps uvicorn locate the module correctly
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
