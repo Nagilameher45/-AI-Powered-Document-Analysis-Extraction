@@ -35,7 +35,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyCWVOcYgdVATQ85oXn0zc_oX0BGkD
 X_API_KEY = os.getenv("X_API_KEY", "sk_track2_987654321")
 
 # --- Data Models (Requirement 8 & 9) [cite: 39, 41] ---
-class DocumentRequest(Base64_Encoded_Body):
+class DocumentRequest(BaseModel):. BaseModel
     fileName: str # [cite: 40]
     fileType: str # [cite: 40]
     fileBase64: str # [cite: 40]
