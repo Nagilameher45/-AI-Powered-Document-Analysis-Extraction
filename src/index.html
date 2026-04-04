@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Document Analyzer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .loader { border-top-color: #6366f1; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen font-sans p-4 md:p-10">
+    <div class="max-w-3xl mx-auto space-y-8">
+        <header class="text-center">
+            <h1 class="text-4xl font-black text-indigo-600">DocuIntel AI</h1>
+            <p class="text-slate-500 font-medium mt-2">Upload PDF, DOCX, or Images for Analysis</p>
+        </header>
+
+        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+            <h2 class="font-bold mb-4 text-slate-700 uppercase text-xs tracking-widest">API Configuration</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <input id="apiUrl" type="text" placeholder="Backend URL (e.g. https://you.onrender.com)" 
+                       class="border p-3 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                <input id="apiKey" type="password" value="sk_track2_987654321" 
+                       class="border p-3 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+            </div>
+        </div>
+
+        <div class="bg-white p-10 rounded-[2rem] shadow-xl border-2 border-dashed border-slate-200 text-center space-y-6">
+            <input type="file" id="fileInput" class="hidden" onchange="updateFileName()">
+            <label for="fileInput" class="cursor-pointer inline-block bg-indigo-600 text-white px-8 py-4 rounded-2xl font-bold hover:bg-indigo-700 transition-all">
+                Choose Document
+            </label>
+            <p id="fileName" class="text-slate-400 font-medium italic">No file selected</p>
+            <button onclick="analyzeFile()" id="btn" class="w-full bg-slate-800 text-white py-4 rounded-2xl font-bold hidden">
+                Analyze Document
+            </button>
+            <div id="loading" class="hidden flex justify-center"><div class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-12 w-12"></div></div>
+        </div>
+
+        <div id="results" class="hidden space-y-6 animate-in fade-in duration-500">
+            <div class="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="font-black text-xl">AI Summary</h3>
+                    <span id="sentiment" class="px-3 py-1 bg-indigo-100 text-indigo-600 rounded-full text-xs font-bold uppercase"></span>
+                </div>
+                <p id="summaryText" class="text-slate-600 leading-relaxed italic text-lg"></p>
+            </div>
+            <div id="entities" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+        </div>
+    </div>
+
+    <script>
+        function updateFileName() {
+            const file = document.getElementById('fileInput').files[0];
+            document.getElementById('fileName').innerText = file ? file.name : "No file selected";
+            document.getElementById('btn').classList.toggle('hidden', !file);
+        }
+
+        async function analyzeFile() {
+            const file = document.getElementById('fileInput').files[0];
+            const url = document.getElementById('apiUrl').value + "/api/document-analyze";
+            const key = document.getElementById('apiKey').value;
+
+            if(!url.startsWith('http')) return alert("Please enter your Render Backend URL first!");
+
+            document.getElementById('loading').classList.remove('hidden');
+            document.getElementById('btn').classList.add('hidden');
+            document.getElementById('results').classList.add('hidden');
+
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = async () => {
+                const base64 = reader.result.split(',')[1];
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'x-api-key': key },
+                        body: JSON.stringify({
+                            fileName: file.name,
+                            fileType: file.name.split('.').pop().toLowerCase(),
+                            fileBase64: base64
+                        })
+                    });
+                    const data = await response.json();
+                    showResults(data);
+                } catch (e) {
+                    alert("Error: " + e.message);
+                } finally {
+                    document.getElementById('loading').classList.add('hidden');
+                    document.getElementById('btn').classList.remove('hidden');
+                }
+            };
+        }
+
+        function showResults(data) {
+            document.getElementById('results').classList.remove('hidden');
+            document.getElementById('summaryText').innerText = `"${data.summary}"`;
+            document.getElementById('sentiment').innerText = data.sentiment;
+            
+            const entityBox = document.getElementById('entities');
+            entityBox.innerHTML = '';
+            for (const [key, list] of Object.entries(data.entities)) {
+                entityBox.innerHTML += `
+                    <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+                        <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">${key}</p>
+                        <div class="flex flex-wrap gap-2">
+                            ${list.length ? list.map(i => `<span class="bg-slate-50 px-3 py-1 rounded-lg text-sm border">${i}</span>`).join('') : '<span class="text-slate-300 italic text-xs">None</span>'}
+                        </div>
+                    </div>`;
+            }
+        }
+    </script>
+</body>
+</html>
