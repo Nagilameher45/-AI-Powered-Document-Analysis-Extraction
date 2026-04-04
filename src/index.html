@@ -1,20 +1,179 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>AI Document Analyzer</title>
+<meta charset="UTF-8">
+<title>AI Document Analyzer</title>
+
+<style>
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Segoe UI', sans-serif;
+}
+
+body {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: white;
+}
+
+/* Container */
+.container {
+    width: 90%;
+    max-width: 700px;
+    padding: 30px;
+    border-radius: 20px;
+    background: rgba(255,255,255,0.1);
+    backdrop-filter: blur(15px);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.2);
+    text-align: center;
+    animation: fadeIn 1s ease;
+}
+
+/* Title */
+h1 {
+    margin-bottom: 20px;
+}
+
+/* Drop Area */
+.drop-area {
+    border: 2px dashed white;
+    padding: 40px;
+    border-radius: 15px;
+    cursor: pointer;
+    transition: 0.3s;
+}
+
+.drop-area:hover {
+    background: rgba(255,255,255,0.1);
+}
+
+.drop-area.dragover {
+    background: rgba(0,255,200,0.2);
+    border-color: #00ffc8;
+}
+
+/* Button */
+button {
+    margin-top: 20px;
+    padding: 12px 25px;
+    border: none;
+    border-radius: 10px;
+    background: #00ffc8;
+    color: black;
+    font-weight: bold;
+    cursor: pointer;
+    transition: 0.3s;
+}
+
+button:hover {
+    transform: scale(1.05);
+}
+
+/* Loader */
+.loader {
+    margin-top: 20px;
+    display: none;
+}
+
+.spinner {
+    border: 4px solid rgba(255,255,255,0.3);
+    border-top: 4px solid #00ffc8;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+    margin: auto;
+}
+
+/* Result */
+.result {
+    margin-top: 20px;
+    text-align: left;
+    background: rgba(0,0,0,0.3);
+    padding: 15px;
+    border-radius: 10px;
+    max-height: 300px;
+    overflow-y: auto;
+    display: none;
+}
+
+/* Animations */
+@keyframes spin {
+    100% { transform: rotate(360deg); }
+}
+
+@keyframes fadeIn {
+    from {opacity:0; transform: translateY(20px);}
+    to {opacity:1; transform: translateY(0);}
+}
+</style>
+
 </head>
 <body>
 
-<h1>📄 AI Document Analyzer</h1>
+<div class="container">
+    <h1>📄 AI Document Analyzer</h1>
 
-<input type="file" id="fileInput">
-<button onclick="upload()">Analyze</button>
+    <div class="drop-area" id="dropArea">
+        <p>Drag & Drop File Here or Click</p>
+        <input type="file" id="fileInput" hidden>
+    </div>
 
-<pre id="result"></pre>
+    <button onclick="upload()">Analyze</button>
+
+    <div class="loader" id="loader">
+        <div class="spinner"></div>
+        <p>Analyzing...</p>
+    </div>
+
+    <div class="result" id="result"></div>
+</div>
 
 <script>
+let file;
+
+/* Drag & Drop */
+const dropArea = document.getElementById("dropArea");
+const fileInput = document.getElementById("fileInput");
+
+dropArea.addEventListener("click", () => fileInput.click());
+
+fileInput.addEventListener("change", (e) => {
+    file = e.target.files[0];
+    dropArea.innerHTML = `<p>📁 ${file.name}</p>`;
+});
+
+dropArea.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    dropArea.classList.add("dragover");
+});
+
+dropArea.addEventListener("dragleave", () => {
+    dropArea.classList.remove("dragover");
+});
+
+dropArea.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropArea.classList.remove("dragover");
+
+    file = e.dataTransfer.files[0];
+    dropArea.innerHTML = `<p>📁 ${file.name}</p>`;
+});
+
+/* Upload */
 async function upload() {
-    const file = document.getElementById("fileInput").files[0];
+    if (!file) {
+        alert("Please upload a file");
+        return;
+    }
+
+    document.getElementById("loader").style.display = "block";
+    document.getElementById("result").style.display = "none";
 
     const reader = new FileReader();
     reader.readAsDataURL(file);
@@ -22,21 +181,48 @@ async function upload() {
     reader.onload = async () => {
         const base64 = reader.result.split(',')[1];
 
-        const res = await fetch("/api/document-analyze", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "x-api-key": "sk_track2_987654321"
-            },
-            body: JSON.stringify({
-                fileName: file.name,
-                fileType: file.name.split('.').pop(),
-                fileBase64: base64
-            })
-        });
+        try {
+            const res = await fetch("/api/document-analyze", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-api-key": "sk_track2_987654321"
+                },
+                body: JSON.stringify({
+                    fileName: file.name,
+                    fileType: file.name.split('.').pop(),
+                    fileBase64: base64
+                })
+            });
 
-        const data = await res.json();
-        document.getElementById("result").innerText = JSON.stringify(data, null, 2);
+            const data = await res.json();
+
+            document.getElementById("loader").style.display = "none";
+            document.getElementById("result").style.display = "block";
+
+            document.getElementById("result").innerHTML = `
+                <h3>📌 Summary</h3>
+                <p>${data.summary}</p>
+
+                <h3>👤 Names</h3>
+                <p>${data.entities.names.join(", ")}</p>
+
+                <h3>📅 Dates</h3>
+                <p>${data.entities.dates.join(", ")}</p>
+
+                <h3>🏢 Organizations</h3>
+                <p>${data.entities.organizations.join(", ")}</p>
+
+                <h3>💰 Amounts</h3>
+                <p>${data.entities.amounts.join(", ")}</p>
+
+                <h3>😊 Sentiment</h3>
+                <p>${data.sentiment}</p>
+            `;
+        } catch (err) {
+            document.getElementById("loader").style.display = "none";
+            alert("Error connecting to server");
+        }
     };
 }
 </script>
