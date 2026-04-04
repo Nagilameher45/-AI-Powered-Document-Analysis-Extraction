@@ -56,10 +56,10 @@ class AnalysisResponse(BaseModel):
 # --- AI Core Logic (Requirement 2 & 12) [cite: 5, 75] ---
 async def extract_and_analyze(base64_data: str, file_type: str, file_name: str):
     """
-    Uses Gemini-2.5-Flash to perform OCR and extraction in one step.
+    Uses Gemini-1.5-Flash to perform OCR and extraction in one step.
     This fulfills the requirement for multi-format support and automatic analysis[cite: 3, 6].
     """
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key={GEMINI_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
     
     system_prompt = """
     You are a professional Document Analysis System[cite: 3].
